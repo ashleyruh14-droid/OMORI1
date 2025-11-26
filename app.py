@@ -954,4 +954,3 @@ else:
 
 else:
     st.caption("Historique disponible uniquement en **mode responsable**.")
-
