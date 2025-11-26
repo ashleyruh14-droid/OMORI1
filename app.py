@@ -229,7 +229,6 @@ def write_log(
 ):
     """
     Enregistre un contrôle dans un fichier CSV d'historique.
-    Si le fichier n'existe pas, il est recréé avec un en-tête propre.
     """
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -823,6 +822,7 @@ if st.session_state.get("trigger_print"):
 
 st.markdown("---")
 st.subheader("📁 Historique des contrôles OMORI 1")
+st.write("🚨 DEBUG HISTORIQUE : ce bloc est exécuté ✅")
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 csv_path = os.path.join(base_dir, "historique_controles_omori.csv")
@@ -835,7 +835,6 @@ if not os.path.isfile(csv_path):
     )
 else:
     try:
-        # Lire le contenu brut du CSV
         with open(csv_path, "r", encoding="utf-8-sig") as f:
             contenu = f.read()
 
@@ -844,7 +843,6 @@ else:
         else:
             lignes = contenu.strip().splitlines()
 
-            # Aperçu des 50 dernières lignes
             st.markdown("#### Aperçu des 50 dernières lignes")
             apercu = "\n".join(lignes[-50:])
             st.text_area(
@@ -853,7 +851,6 @@ else:
                 height=300,
             )
 
-            # Bouton téléchargement de TOUT l'historique
             st.markdown("#### Export complet")
             st.download_button(
                 "📥 Télécharger tout l'historique (CSV complet)",
@@ -864,7 +861,3 @@ else:
 
     except Exception as e:
         st.error(f"❌ Impossible de lire l'historique : {e}")
-
-        except Exception as e:
-            st.error(f"❌ Impossible de lire l'historique : {e}")
-
