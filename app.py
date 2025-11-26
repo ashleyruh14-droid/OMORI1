@@ -839,10 +839,10 @@ if is_admin():
         )
     else:
         try:
-            # Lecture CSV :
-            #  - séparateur ; 
-            #  - Lot et E forcés en texte
-            #  - lignes corrompues ignorées (on_bad_lines='skip')
+            # Lecture CSV tolérante :
+            #  - séparateur ;
+            #  - Lot et E en texte
+            #  - lignes corrompues ignorées
             df = pd.read_csv(
                 csv_path,
                 sep=";",
@@ -858,30 +858,28 @@ if is_admin():
             if df.empty:
                 st.info("Le fichier d'historique existe mais ne contient encore aucun enregistrement.")
             else:
-                # Nettoyage de la colonne Lot (on enlève l'apostrophe de protection pour Excel)
+                # Nettoyage de Lot (on enlève l'éventuelle apostrophe de protection)
                 if "Lot" in df.columns:
                     df["Lot"] = df["Lot"].astype(str).str.lstrip("'")
 
-                # Création colonne datetime si possible
+                # Création d'une colonne Date-heure si possible, pour trier
                 if "Date enregistrement" in df.columns and "Heure enregistrement" in df.columns:
                     df["Date-heure"] = pd.to_datetime(
                         df["Date enregistrement"].astype(str) + " " + df["Heure enregistrement"].astype(str),
                         errors="coerce",
                     )
+                    df = df.sort_values("Date-heure", ascending=False, na_position="last")
                 else:
                     df["Date-heure"] = pd.NaT
-
-                # Tri du plus récent au plus ancien
-                df = df.sort_values("Date-heure", ascending=False, na_position="last")
 
                 st.success(f"✅ {len(df)} contrôles enregistrés dans l'historique.")
 
                 # -------------------------
-                # 🔍 Filtres
+                # 🔍 Filtres PRODUIT / OPÉRATEUR
                 # -------------------------
                 st.markdown("### 🔍 Filtres")
 
-                col_f1, col_f2, col_f3 = st.columns(3)
+                col_f1, col_f2 = st.columns(2)
 
                 # Filtre PRODUIT
                 with col_f1:
@@ -899,26 +897,7 @@ if is_admin():
                         operateurs = ["(Tous)"]
                     filtre_operateur = st.selectbox("Opérateur", operateurs)
 
-                # Filtre DATE (plage)
-                with col_f3:
-                    dates_valides = df["Date-heure"].dropna()
-                    if not dates_valides.empty:
-                        min_date = dates_valides.min().date()
-                        max_date = dates_valides.max().date()
-                    else:
-                        # Si aucune date valide, on prend aujourd'hui
-                        min_date = max_date = dt.date.today()
-
-                    date_start, date_end = st.date_input(
-                        "Période",
-                        value=(min_date, max_date),
-                        min_value=min_date,
-                        max_value=max_date,
-                    )
-
-                # -------------------------
                 # Application des filtres
-                # -------------------------
                 df_filtre = df.copy()
 
                 if filtre_produit != "(Tous)" and "Produit" in df_filtre.columns:
@@ -927,15 +906,8 @@ if is_admin():
                 if filtre_operateur != "(Tous)" and "Opérateur" in df_filtre.columns:
                     df_filtre = df_filtre[df_filtre["Opérateur"] == filtre_operateur]
 
-                # Filtre par date uniquement là où Date-heure est valide
-                masque_date = df_filtre["Date-heure"].notna() & (
-                    (df_filtre["Date-heure"].dt.date >= date_start)
-                    & (df_filtre["Date-heure"].dt.date <= date_end)
-                )
-                df_filtre = df_filtre[masque_date]
-
                 # -------------------------
-                # Tableau final
+                # Tableau final (tous les enregistrements filtrés)
                 # -------------------------
                 st.markdown("### 📊 Tableau des contrôles filtrés")
 
@@ -946,7 +918,7 @@ if is_admin():
                 )
 
                 # -------------------------
-                # Export complet (non filtré)
+                # Export complet (toutes les données, non filtrées)
                 # -------------------------
                 st.markdown("### 📥 Export complet (toutes les données)")
 
@@ -966,5 +938,7 @@ if is_admin():
 
 else:
     st.caption("Historique détaillé disponible uniquement en **mode responsable**.")
+
+
 
 
