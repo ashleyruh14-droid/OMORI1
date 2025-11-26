@@ -839,19 +839,27 @@ if is_admin():
         )
     else:
         try:
-            df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig")
+            # Lecture du CSV en forçant Lot (et E) en texte pour éviter la notation scientifique
+            df = pd.read_csv(
+                csv_path,
+                sep=";",
+                encoding="utf-8-sig",
+                dtype={
+                    "Lot": str,
+                    "Date embossage (E)": str,
+                }
+            )
 
             if df.empty:
                 st.info("Le fichier d'historique existe mais ne contient encore aucun enregistrement.")
             else:
-                # Fabriquer une colonne datetime exploitable
+                # Colonne datetime exploitable pour tri + filtre date
                 df["Date-heure"] = pd.to_datetime(
                     df["Date enregistrement"] + " " + df["Heure enregistrement"],
                     errors="coerce",
-                    dayfirst=False,
                 )
 
-                # Trier du plus récent au plus ancien
+                # Tri du plus récent au plus ancien
                 df = df.sort_values("Date-heure", ascending=False)
 
                 st.success(f"✅ {len(df)} contrôles enregistrés dans l'historique.")
@@ -875,8 +883,17 @@ if is_admin():
 
                 # Filtre DATE (plage)
                 with col_f3:
-                    min_date = df["Date-heure"].min().date()
-                    max_date = df["Date-heure"].max().date()
+                    # Gestion des dates possibles (on ignore les NaT)
+                    dates_valides = df["Date-heure"].dropna()
+                    if not dates_valides.empty:
+                        min_date = dates_valides.min().date()
+                        max_date = dates_valides.max().date()
+                    else:
+                        # Valeurs par défaut si jamais tout est NaT (très improbable)
+                        today = dt.date.today()
+                        min_date = today
+                        max_date = today
+
                     date_start, date_end = st.date_input(
                         "Filtrer par date",
                         value=(min_date, max_date),
@@ -884,7 +901,9 @@ if is_admin():
                         max_value=max_date,
                     )
 
+                # -------------------------
                 # Application des filtres
+                # -------------------------
                 df_filtre = df.copy()
 
                 if filtre_produit != "(Tous)":
@@ -893,9 +912,10 @@ if is_admin():
                 if filtre_operateur != "(Tous)":
                     df_filtre = df_filtre[df_filtre["Opérateur"] == filtre_operateur]
 
-                # Filtre date : conserver les enregistrements dans la plage sélectionnée
+                # Filtre date (on ne filtre que les lignes où Date-heure est valide)
                 df_filtre = df_filtre[
-                    (df_filtre["Date-heure"].dt.date >= date_start)
+                    df_filtre["Date-heure"].notna()
+                    & (df_filtre["Date-heure"].dt.date >= date_start)
                     & (df_filtre["Date-heure"].dt.date <= date_end)
                 ]
 
@@ -911,11 +931,13 @@ if is_admin():
                 )
 
                 # -------------------------
-                # EXPORT COMPLET (pas filtré)
+                # EXPORT COMPLET (non filtré)
                 # -------------------------
                 st.markdown("### 📥 Export complet (pour audit)")
 
-                csv_export = df.to_csv(index=False, sep=";").encode("utf-8-sig")
+                csv_export = df.drop(columns=["Date-heure"], errors="ignore") \
+                               .to_csv(index=False, sep=";") \
+                               .encode("utf-8-sig")
 
                 st.download_button(
                     "📥 Télécharger tout l'historique (CSV complet)",
@@ -928,4 +950,8 @@ if is_admin():
             st.error(f"❌ Erreur lors de la lecture de l'historique : {e}")
 
 else:
+    st.caption("Historique détaillé disponible uniquement en **mode responsable**.")
+
+else:
     st.caption("Historique disponible uniquement en **mode responsable**.")
+
