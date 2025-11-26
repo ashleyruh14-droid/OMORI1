@@ -3,9 +3,8 @@ import datetime as dt
 import os
 import csv
 import math
-import streamlit.components.v1 as components
-import io
 import pandas as pd
+import streamlit.components.v1 as components
 
 # ---------------------------------------------------
 # CONFIG DE LA PAGE
@@ -131,46 +130,24 @@ def get_poids_min(poids_produit):
     return POIDS_MIN_OMORI1.get(p)
 
 
-def zones_1er_controle(nb_pesees: int):
-    """
-    Zones du 1er contrôle (basé sur la procédure) :
-    Retourne (accept_max, refus_min) pour le nombre de TU1.
-    """
-    if nb_pesees == 30:
-        # Acceptation : 0 ; 2e contrôle : 1 ; Refus : >= 2
-        return 0, 2
-    elif nb_pesees == 50:
-        # Acceptation : <= 1 ; 2e contrôle : 2 ; Refus : >= 3
-        return 1, 3
-    elif nb_pesees == 80:
-        # Acceptation : <= 1 ; 2e contrôle : 2 ou 3 ; Refus : >= 4
-        return 1, 4
-
-    # Cas particuliers (petites quantités, etc.)
-    if nb_pesees < 30:
-        return 0, 2
-    elif nb_pesees < 50:
-        return 1, 3
-    elif nb_pesees < 80:
-        return 2, 4
+def max_nc_1er_controle(nb_pesees: int) -> int:
+    """Nombre max de non-conformes autorisés au 1er contrôle."""
+    if nb_pesees <= 30:
+        return 0
+    elif nb_pesees <= 50:
+        return 1
+    elif nb_pesees <= 80:
+        return 2
     else:
-        return 3, 5
+        return 3
 
 
-def max_nc_total_2eme_controle(nb_pesees_par_controle: int) -> int:
-    """
-    Nombre total de TU1 autorisés sur 2 contrôles.
-    nb_pesees_par_controle : 30 / 50 / 80 (ou autre).
-    """
-    if nb_pesees_par_controle == 30:
-        return 1   # 60 pesées au total
-    elif nb_pesees_par_controle == 50:
-        return 2   # 100 pesées au total
-    elif nb_pesees_par_controle == 80:
-        return 3   # 160 pesées au total
-
-    # fallback générique
-    return max(1, nb_pesees_par_controle // 40)
+def max_nc_2eme_controle(nb_pesees: int) -> int:
+    """Nombre max de non-conformes autorisés au 2ème contrôle."""
+    if nb_pesees <= 80:
+        return 0
+    else:
+        return 1
 
 
 def get_g_value(n: int):
@@ -211,13 +188,13 @@ def calc_stats_g(valeurs, poids_min):
     return moyenne, s, g, seuil_stat, critere_ok
 
 
-def compute_lot(date_cond: dt.date, e_jour):
+def compute_lot(date_cond: dt.date, e_jour: int | None) -> str:
     """
     Calcule le n° de lot automatique :
     - Année codée sur 3 chiffres (année - 2000), ex : 2025 -> 025
     - Quantième sur 3 chiffres
-    - Optionnellement 'E' + jour (1 à 31) sur 2 chiffres
-    => ex : 25/11/2025, E = 24 -> 025329E24
+    - Optionnellement 'E' + jour embossage (1–31) sur 2 chiffres
+    => ex : 25/11/2025, E=24 -> 025329E24
     """
     if not date_cond:
         return ""
@@ -246,12 +223,14 @@ def write_log(
     moyenne_1,
     nb_nc_1,
     moyenne_globale,
+    nb_nc_2,
     nb_nc_total,
     valeurs_1,
     valeurs_2,
 ):
     """
-    Enregistre un contrôle dans un fichier CSV d'historique OMORI 1.
+    Enregistre un contrôle dans un fichier CSV d'historique.
+    Si le fichier n'existe pas, il est recréé avec un en-tête propre.
     """
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -265,6 +244,12 @@ def write_log(
     details_p1 = "|".join(f"{v:.2f}" for v in valeurs_1) if valeurs_1 else ""
     details_p2 = "|".join(f"{v:.2f}" for v in valeurs_2) if valeurs_2 else ""
 
+    e_str = f"{int(e_jour):02d}" if e_jour else ""
+
+    # Si pas de 2ème contrôle, on considère le total = NC1
+    if nb_nc_total is None and nb_nc_1 is not None:
+        nb_nc_total = nb_nc_1
+
     try:
         with open(csv_path, "a", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f, delimiter=";")
@@ -277,7 +262,7 @@ def write_log(
                     "Poste",
                     "Produit",
                     "Lot",
-                    "E (jour)",
+                    "Code E",
                     "Date fabrication",
                     "Date conditionnement",
                     "Poids produit (g)",
@@ -287,6 +272,7 @@ def write_log(
                     "Moyenne 1er contrôle (g)",
                     "Nb NC 1er contrôle",
                     "Moyenne globale (1er + 2e) (g)",
+                    "Nb NC 2e contrôle",
                     "Nb NC total (1er + 2e)",
                     "Détail pesées 1er contrôle",
                     "Détail pesées 2e contrôle",
@@ -300,9 +286,9 @@ def write_log(
                 POSTE_FIXE,
                 produit,
                 lot,
-                e_jour if e_jour is not None else "",
-                date_fab.strftime("%Y-%m-%d"),
-                date_cond.strftime("%Y-%m-%d"),
+                e_str,
+                date_fab.strftime("%Y-%m-%d") if date_fab else "",
+                date_cond.strftime("%Y-%m-%d") if date_cond else "",
                 poids_produit,
                 quantite_reelle,
                 poids_min,
@@ -310,6 +296,7 @@ def write_log(
                 f"{moyenne_1:.2f}" if moyenne_1 is not None else "",
                 nb_nc_1 if nb_nc_1 is not None else "",
                 f"{moyenne_globale:.2f}" if moyenne_globale is not None else "",
+                nb_nc_2 if nb_nc_2 is not None else "",
                 nb_nc_total if nb_nc_total is not None else "",
                 details_p1,
                 details_p2,
@@ -346,7 +333,7 @@ def validate_general_fields(operateur, produit, date_fab, date_cond, e_jour, poi
         st.error("Merci de renseigner la **date de conditionnement**.")
         ok = False
     if not e_jour:
-        st.error("Merci de renseigner **E (jour d'embossage)**.")
+        st.error("Merci de renseigner le **code E (jour embossage)**.")
         ok = False
     if poids_produit <= 0:
         st.error("Merci de renseigner un **poids de produit** strictement supérieur à 0.")
@@ -454,15 +441,9 @@ with col1:
     )
 
 with col2:
-    # E = jour d'embossage (1 à 31)
-    today = dt.date.today()
-    default_e = today.day
-    e_jour = st.selectbox(
-        "E (jour d'embossage)",
-        options=list(range(1, 32)),
-        index=default_e - 1 if 1 <= default_e <= 31 else 0,
-        help="Choisir le jour d'embossage (1 à 31)."
-    )
+    # Code E = jour embossage (1–31)
+    default_e = dt.date.today().day
+    e_jour = st.number_input("E (jour embossage)", min_value=1, max_value=31, step=1, value=default_e)
 
 with col3:
     # Date fabrication
@@ -541,7 +522,7 @@ st.header("Étape 3 : Nombre de pesées à effectuer")
 
 nb_pesees = 0
 if quantite_theo > 0:
-    if quantite_theo <= 100:
+    if quantite_theo < 100:
         nb_pesees = int(quantite_theo)
     elif quantite_theo <= 500:
         nb_pesees = 30
@@ -595,25 +576,27 @@ else:
                 )
 
     if st.button("Analyser le 1er contrôle"):
+        # Vérifier d'abord que toutes les infos générales sont remplies
         if not validate_general_fields(operateur, produit, date_fab, date_cond, e_jour, poids_produit, quantite_theo):
             st.stop()
 
+        # Vérifier que toutes les pesées sont remplies
         if any(v <= 0 for v in valeurs_1):
             st.error("Merci de **remplir toutes les pesées du 1er contrôle** (aucune valeur ne doit être à 0).")
             st.stop()
 
-        valeurs_valides = valeurs_1[:]
+        valeurs_valides = valeurs_1[:]  # toutes > 0
 
         moyenne_1, s1, g1, seuil_stat_1, critere_g_1 = calc_stats_g(valeurs_valides, poids_min)
         non_conformes_1 = [v for v in valeurs_valides if v < poids_min]
         nb_nc_1 = len(non_conformes_1)
-        accept_max, refus_min = zones_1er_controle(len(valeurs_valides))
+        seuil_nc_1 = max_nc_1er_controle(len(valeurs_valides))
 
         st.write(f"**Moyenne 1er contrôle :** {moyenne_1:.2f} g")
         st.write(f"**Écart-type estimé (s) :** {s1:.3f} g" if s1 is not None else "Écart-type non calculé")
         st.write(
-            f"**Nombre de pesées non conformes (TU1) :** {nb_nc_1} "
-            f"/ {len(valeurs_valides)} (acceptation si ≤ {accept_max}, refus direct si ≥ {refus_min}) "
+            f"**Nombre de pesées non conformes :** {nb_nc_1} "
+            f"/ {len(valeurs_valides)} (tolérance max : {seuil_nc_1}) "
             f"(seuil poids {poids_min:.2f} g)"
         )
 
@@ -624,10 +607,10 @@ else:
                 f"({'OK' if critere_g_1 else 'NON OK'})"
             )
 
-        conforme_nc_accept = nb_nc_1 <= accept_max
-        nc_refus_direct = nb_nc_1 >= refus_min
+        conforme_nc = nb_nc_1 <= seuil_nc_1
         conforme_g = critere_g_1
 
+        # On garde les valeurs du 1er contrôle pour le 2e
         st.session_state["valeurs_1"] = valeurs_valides
         st.session_state["moyenne_1"] = moyenne_1
         st.session_state["nb_nc_1"] = nb_nc_1
@@ -638,37 +621,30 @@ else:
             "produit": produit,
             "date_fab": date_fab,
             "date_cond": date_cond,
-            "e_jour": e_jour,
+            "e_jour": int(e_jour) if e_jour else None,
             "poids_produit": poids_produit,
             "quantite_theo": quantite_theo,
             "lot": lot,
         }
 
-        if conforme_nc_accept and conforme_g:
+        if conforme_nc and conforme_g:
             verdict = "Lot conforme au 1er contrôle"
             st.success(f"✅ {verdict}.")
             st.session_state["premier_controle_conforme"] = True
             st.session_state["premier_controle_effectue"] = True
-            st.session_state["deuxieme_controle_autorise"] = False
-            st.session_state["nb_nc_total"] = nb_nc_1
-            st.session_state["moyenne_globale"] = moyenne_1
             st.session_state["verdict_final"] = verdict
-
-        elif nc_refus_direct:
-            verdict = "Lot NON CONFORME au 1er contrôle - STOP"
-            st.error("🛑 **Lot refusé au 1er contrôle (trop de TU1). Prévenez votre responsable / Service Qualité.**")
-            st.session_state["premier_controle_conforme"] = False
-            st.session_state["premier_controle_effectue"] = True
-            st.session_state["deuxieme_controle_autorise"] = False
-            st.session_state["nb_nc_total"] = nb_nc_1
             st.session_state["moyenne_globale"] = moyenne_1
-            st.session_state["verdict_final"] = verdict
-
+            st.session_state["nb_nc_2"] = None
+            st.session_state["nb_nc_total"] = nb_nc_1
         else:
-            st.warning("⚠️ Lot en zone intermédiaire → effectuer un **2ème contrôle**.")
+            st.error("❌ Lot non conforme au 1er contrôle.")
+            if not conforme_nc:
+                st.warning("➜ Dépassement de la tolérance sur le **nombre de pesées non conformes**.")
+            if not conforme_g:
+                st.warning("➜ Échec du **contrôle statistique** (moyenne trop proche du mini).")
+
             st.session_state["premier_controle_conforme"] = False
             st.session_state["premier_controle_effectue"] = True
-            st.session_state["deuxieme_controle_autorise"] = True
             st.session_state["verdict_final"] = None
 
 st.markdown("---")
@@ -684,14 +660,11 @@ moyenne_1_session = st.session_state.get("moyenne_1", None)
 nb_nc_1_session = st.session_state.get("nb_nc_1", None)
 
 moyenne_globale = None
+nb_nc_2 = None
 nb_nc_total = st.session_state.get("nb_nc_total", None)
 valeurs_2 = []
 
-if (
-    st.session_state.get("premier_controle_effectue")
-    and not st.session_state.get("premier_controle_conforme")
-    and st.session_state.get("deuxieme_controle_autorise", False)
-):
+if st.session_state.get("premier_controle_effectue") and not st.session_state.get("premier_controle_conforme"):
     st.subheader("Saisie des pesées (2ème contrôle)")
 
     cols2 = st.columns(4)
@@ -714,6 +687,7 @@ if (
                 )
 
     if st.button("Analyser le 2ème contrôle"):
+        # Vérifier que toutes les pesées sont remplies
         if any(v <= 0 for v in valeurs_2):
             st.error("Merci de **remplir toutes les pesées du 2ème contrôle** (aucune valeur ne doit être à 0).")
             st.stop()
@@ -721,28 +695,24 @@ if (
         valeurs_valides_2 = valeurs_2[:]
         non_conformes_2 = [v for v in valeurs_valides_2 if v < poids_min]
         nb_nc_2 = len(non_conformes_2)
+        seuil_nc_2 = max_nc_2eme_controle(len(valeurs_valides_2))
 
+        # Moyenne globale sur les 2 contrôles
         toutes_valeurs = list(valeurs_1_session) + list(valeurs_valides_2)
         moyenne_globale, s_tot, g_tot, seuil_stat_tot, critere_g_tot = calc_stats_g(
             toutes_valeurs, poids_min
         )
-
-        nb_pesees_par_controle = st.session_state.get("nb_pesees", 0)
-        total_pesees = len(toutes_valeurs)
-        max_nc_autorise_total = max_nc_total_2eme_controle(nb_pesees_par_controle)
 
         nb_nc_total = (nb_nc_1_session or 0) + nb_nc_2
 
         st.write(f"**Moyenne globale (1er + 2ème contrôle) :** {moyenne_globale:.2f} g")
         st.write(f"**Écart-type global (s) :** {s_tot:.3f} g" if s_tot is not None else "Écart-type non calculé")
         st.write(
-            f"**Nombre total de pesées :** {total_pesees} "
-            f"(2 × {nb_pesees_par_controle})"
+            f"**Nombre de pesées non conformes au 2ème contrôle :** {nb_nc_2} "
+            f"/ {len(valeurs_valides_2)} (tolérance max : {seuil_nc_2}) "
+            f"(seuil poids {poids_min:.2f} g)"
         )
-        st.write(
-            f"**Nombre total de pesées non conformes (TU1) sur 1er + 2e contrôle :** {nb_nc_total} "
-            f"(acceptation si ≤ {max_nc_autorise_total})"
-        )
+        st.write(f"**Nombre total de pesées non conformes (1er + 2e) : {nb_nc_total}**")
 
         if g_tot is not None and seuil_stat_tot is not None:
             st.write(
@@ -751,7 +721,7 @@ if (
                 f"({'OK' if critere_g_tot else 'NON OK'})"
             )
 
-        conforme_nc_2 = nb_nc_total <= max_nc_autorise_total
+        conforme_nc_2 = nb_nc_2 <= seuil_nc_2
         conforme_g_2 = critere_g_tot
 
         if conforme_nc_2 and conforme_g_2:
@@ -762,17 +732,18 @@ if (
             verdict = "Lot NON CONFORME après le 2ème contrôle - STOP"
             st.error("🛑 **STOP, prévenez votre responsable et bloquez le produit !**")
             if not conforme_nc_2:
-                st.warning("➜ Dépassement de la tolérance sur le **nombre total de pesées non conformes**.")
+                st.warning("➜ Dépassement de la tolérance sur le **nombre de pesées non conformes** au 2ème contrôle.")
             if not conforme_g_2:
                 st.warning("➜ Échec du **contrôle statistique global** (moyenne trop proche du mini).")
 
             st.session_state["verdict_final"] = verdict
 
         st.session_state["moyenne_globale"] = moyenne_globale
+        st.session_state["nb_nc_2"] = nb_nc_2
         st.session_state["nb_nc_total"] = nb_nc_total
         st.session_state["valeurs_2"] = valeurs_valides_2
 else:
-    st.info("Le 2ème contrôle n'est disponible que si le 1er contrôle est en zone intermédiaire (TU1).")
+    st.info("Le 2ème contrôle n'est disponible que si le 1er contrôle est non conforme.")
 
 st.markdown("---")
 
@@ -788,7 +759,7 @@ if st.session_state.get("verdict_final"):
     produit_info = infos.get("produit", produit)
     date_fab_info = infos.get("date_fab", date_fab)
     date_cond_info = infos.get("date_cond", date_cond)
-    e_jour_info = infos.get("e_jour", e_jour)
+    e_jour_info = infos.get("e_jour", int(e_jour) if e_jour else None)
     poids_produit_info = infos.get("poids_produit", poids_produit)
     quantite_theo_info = infos.get("quantite_theo", quantite_theo)
     lot_info = infos.get("lot", lot)
@@ -798,13 +769,14 @@ if st.session_state.get("verdict_final"):
     moyenne_1_finale = moyenne_1_session
     nb_nc_1_final = nb_nc_1_session
     moyenne_globale_finale = st.session_state.get("moyenne_globale", moyenne_1_session)
+    nb_nc_2_final = st.session_state.get("nb_nc_2", None)
     nb_nc_total_final = st.session_state.get("nb_nc_total", nb_nc_1_final)
-
     valeurs_1_finales = valeurs_1_session
     valeurs_2_finales = st.session_state.get("valeurs_2", [])
 
     st.write(f"**Verdict :** {st.session_state['verdict_final']}")
 
+    # Quantité réelle obligatoire
     quantite_reelle = st.number_input(
         "Quantité réellement produite (uc)",
         min_value=0,
@@ -831,6 +803,7 @@ if st.session_state.get("verdict_final"):
                 moyenne_1=moyenne_1_finale,
                 nb_nc_1=nb_nc_1_final,
                 moyenne_globale=moyenne_globale_finale,
+                nb_nc_2=nb_nc_2_final,
                 nb_nc_total=nb_nc_total_final,
                 valeurs_1=valeurs_1_finales,
                 valeurs_2=valeurs_2_finales,
@@ -838,7 +811,7 @@ if st.session_state.get("verdict_final"):
             st.success("✅ Contrôle enregistré dans l'historique.")
             st.session_state["trigger_print"] = True
 
-# Impression
+# Impression (la suppression de la date/heure se fait dans les options du navigateur)
 if st.session_state.get("trigger_print"):
     components.html(
         """
@@ -861,93 +834,80 @@ if is_admin():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     csv_path = os.path.join(base_dir, "historique_controles_omori.csv")
 
-    if os.path.exists(csv_path):
+    if not os.path.isfile(csv_path):
+        st.info("Aucun fichier d'historique trouvé pour le moment (aucune pesée encore enregistrée).")
+    else:
         try:
-            df_hist = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig")
+            df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig")
 
-            if df_hist.empty:
-                st.info("Le fichier d'historique est vide pour le moment.")
+            if df.empty:
+                st.info("Le fichier d'historique existe mais ne contient encore aucun contrôle.")
             else:
-                # Conversion date enregistrement
-                if "Date enregistrement" in df_hist.columns:
-                    df_hist["Date_enr_dt"] = pd.to_datetime(
-                        df_hist["Date enregistrement"], errors="coerce"
-                    )
-                else:
-                    df_hist["Date_enr_dt"] = pd.NaT
+                # Filtres
+                col_f1, col_f2, col_f3, col_f4 = st.columns(4)
 
-                st.markdown("#### 🔍 Filtres")
+                with col_f1:
+                    op_list = ["(Tous)"] + sorted(df["Opérateur"].dropna().unique().tolist())
+                    op_filter = st.selectbox("Filtrer par opérateur", op_list)
 
-                colf1, colf2 = st.columns(2)
-                with colf1:
-                    ops = ["Tous"] + sorted(
-                        [x for x in df_hist["Opérateur"].dropna().unique().tolist()]
-                    )
-                    produits = ["Tous"] + sorted(
-                        [x for x in df_hist["Produit"].dropna().unique().tolist()]
-                    )
-                    operateur_filter = st.selectbox("Opérateur", options=ops)
-                    produit_filter = st.selectbox("Produit", options=produits)
+                with col_f2:
+                    prod_list = ["(Tous)"] + sorted(df["Produit"].dropna().unique().tolist())
+                    prod_filter = st.selectbox("Filtrer par produit", prod_list)
 
-                with colf2:
-                    verdicts = ["Tous"] + sorted(
-                        [x for x in df_hist["Verdict final"].dropna().unique().tolist()]
-                    )
-                    verdict_filter = st.selectbox("Verdict", options=verdicts)
-                    lot_filter = st.text_input("Lot (contient)", "")
+                with col_f3:
+                    verdict_list = ["(Tous)"] + sorted(df["Verdict final"].dropna().unique().tolist())
+                    verdict_filter = st.selectbox("Filtrer par verdict", verdict_list)
 
-                # Filtres de dates
-                min_date = df_hist["Date_enr_dt"].min()
-                max_date = df_hist["Date_enr_dt"].max()
-                if pd.isna(min_date) or pd.isna(max_date):
-                    date_range = None
-                    st.caption("Dates d'enregistrement non exploitables pour le filtrage.")
-                else:
-                    date_range = st.date_input(
-                        "Plage de dates (Date d'enregistrement)",
-                        value=(min_date.date(), max_date.date()),
+                with col_f4:
+                    lot_list = ["(Tous)"] + sorted(df["Lot"].dropna().unique().tolist())
+                    lot_filter = st.selectbox("Filtrer par lot", lot_list)
+
+                col_dates = st.columns(2)
+                with col_dates[0]:
+                    date_min = st.date_input(
+                        "Date enregistrement min",
+                        value=None,
+                        format="YYYY-MM-DD",
+                        key="hist_date_min"
+                    )
+                with col_dates[1]:
+                    date_max = st.date_input(
+                        "Date enregistrement max",
+                        value=None,
+                        format="YYYY-MM-DD",
+                        key="hist_date_max"
                     )
 
-                # Application des filtres
-                df_filtered = df_hist.copy()
+                df_filtered = df.copy()
 
-                if operateur_filter != "Tous":
-                    df_filtered = df_filtered[df_filtered["Opérateur"] == operateur_filter]
+                if op_filter != "(Tous)":
+                    df_filtered = df_filtered[df_filtered["Opérateur"] == op_filter]
 
-                if produit_filter != "Tous":
-                    df_filtered = df_filtered[df_filtered["Produit"] == produit_filter]
+                if prod_filter != "(Tous)":
+                    df_filtered = df_filtered[df_filtered["Produit"] == prod_filter]
 
-                if verdict_filter != "Tous":
+                if verdict_filter != "(Tous)":
                     df_filtered = df_filtered[df_filtered["Verdict final"] == verdict_filter]
 
-                if lot_filter:
-                    df_filtered = df_filtered[
-                        df_filtered["Lot"].astype(str).str.contains(lot_filter, case=False, na=False)
-                    ]
+                if lot_filter != "(Tous)":
+                    df_filtered = df_filtered[df_filtered["Lot"] == lot_filter]
 
-                if date_range is not None and len(date_range) == 2:
-                    start_date, end_date = date_range
-                    df_filtered = df_filtered[
-                        (df_filtered["Date_enr_dt"].dt.date >= start_date)
-                        & (df_filtered["Date_enr_dt"].dt.date <= end_date)
-                    ]
+                # Filtre sur dates d'enregistrement
+                if date_min:
+                    df_filtered = df_filtered[df_filtered["Date enregistrement"] >= date_min.strftime("%Y-%m-%d")]
+                if date_max:
+                    df_filtered = df_filtered[df_filtered["Date enregistrement"] <= date_max.strftime("%Y-%m-%d")]
 
-                st.caption(f"Nombre d'enregistrements après filtres : {len(df_filtered)}")
-                st.dataframe(df_filtered.drop(columns=["Date_enr_dt"], errors="ignore"))
+                st.markdown("#### Résultats filtrés")
+                st.dataframe(df_filtered, use_container_width=True)
 
-                # Téléchargement de la vue filtrée
-                buffer = io.StringIO()
-                df_filtered.drop(columns=["Date_enr_dt"], errors="ignore").to_csv(
-                    buffer, index=False, sep=";"
-                )
+                csv_export = df_filtered.to_csv(index=False, sep=";").encode("utf-8-sig")
                 st.download_button(
-                    label="📥 Télécharger la vue filtrée (CSV)",
-                    data=buffer.getvalue(),
-                    file_name="historique_controles_omori_filtre.csv",
-                    mime="text/csv",
+                    "📥 Télécharger la vue filtrée (CSV)",
+                    data=csv_export,
+                    file_name="historique_omori1_filtre.csv",
+                    mime="text/csv"
                 )
 
         except Exception as e:
-            st.error(f"Erreur lors de la lecture de l'historique : {e}")
-    else:
-        st.info("Aucun fichier d'historique trouvé pour le moment.")
+            st.error(f"❌ Impossible de lire l'historique : {e}")
