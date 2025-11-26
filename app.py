@@ -3,7 +3,6 @@ import datetime as dt
 import os
 import csv
 import math
-import pandas as pd
 import streamlit.components.v1 as components
 
 # ---------------------------------------------------
@@ -246,7 +245,6 @@ def write_log(
 
     e_str = f"{int(e_jour):02d}" if e_jour else ""
 
-    # Si pas de 2ème contrôle, on considère le total = NC1
     if nb_nc_total is None and nb_nc_1 is not None:
         nb_nc_total = nb_nc_1
 
@@ -441,18 +439,21 @@ with col1:
     )
 
 with col2:
-    # Code E = jour embossage (1–31)
     default_e = dt.date.today().day
-    e_jour = st.number_input("E (jour embossage)", min_value=1, max_value=31, step=1, value=default_e)
+    e_jour = st.number_input(
+        "E (jour embossage)",
+        min_value=1,
+        max_value=31,
+        step=1,
+        value=default_e
+    )
 
 with col3:
-    # Date fabrication
     date_fab = st.date_input("Date de fabrication", value=dt.date.today())
 
 col4, col5, col6 = st.columns(3)
 
 with col4:
-    # Date conditionnement = aujourd'hui par défaut, modifiable uniquement en admin
     if is_admin():
         date_cond = st.date_input("Date de conditionnement", value=dt.date.today())
     else:
@@ -576,16 +577,14 @@ else:
                 )
 
     if st.button("Analyser le 1er contrôle"):
-        # Vérifier d'abord que toutes les infos générales sont remplies
         if not validate_general_fields(operateur, produit, date_fab, date_cond, e_jour, poids_produit, quantite_theo):
             st.stop()
 
-        # Vérifier que toutes les pesées sont remplies
         if any(v <= 0 for v in valeurs_1):
             st.error("Merci de **remplir toutes les pesées du 1er contrôle** (aucune valeur ne doit être à 0).")
             st.stop()
 
-        valeurs_valides = valeurs_1[:]  # toutes > 0
+        valeurs_valides = valeurs_1[:]
 
         moyenne_1, s1, g1, seuil_stat_1, critere_g_1 = calc_stats_g(valeurs_valides, poids_min)
         non_conformes_1 = [v for v in valeurs_valides if v < poids_min]
@@ -610,7 +609,6 @@ else:
         conforme_nc = nb_nc_1 <= seuil_nc_1
         conforme_g = critere_g_1
 
-        # On garde les valeurs du 1er contrôle pour le 2e
         st.session_state["valeurs_1"] = valeurs_valides
         st.session_state["moyenne_1"] = moyenne_1
         st.session_state["nb_nc_1"] = nb_nc_1
@@ -687,7 +685,6 @@ if st.session_state.get("premier_controle_effectue") and not st.session_state.ge
                 )
 
     if st.button("Analyser le 2ème contrôle"):
-        # Vérifier que toutes les pesées sont remplies
         if any(v <= 0 for v in valeurs_2):
             st.error("Merci de **remplir toutes les pesées du 2ème contrôle** (aucune valeur ne doit être à 0).")
             st.stop()
@@ -697,7 +694,6 @@ if st.session_state.get("premier_controle_effectue") and not st.session_state.ge
         nb_nc_2 = len(non_conformes_2)
         seuil_nc_2 = max_nc_2eme_controle(len(valeurs_valides_2))
 
-        # Moyenne globale sur les 2 contrôles
         toutes_valeurs = list(valeurs_1_session) + list(valeurs_valides_2)
         moyenne_globale, s_tot, g_tot, seuil_stat_tot, critere_g_tot = calc_stats_g(
             toutes_valeurs, poids_min
@@ -776,7 +772,6 @@ if st.session_state.get("verdict_final"):
 
     st.write(f"**Verdict :** {st.session_state['verdict_final']}")
 
-    # Quantité réelle obligatoire
     quantite_reelle = st.number_input(
         "Quantité réellement produite (uc)",
         min_value=0,
@@ -811,7 +806,6 @@ if st.session_state.get("verdict_final"):
             st.success("✅ Contrôle enregistré dans l'historique.")
             st.session_state["trigger_print"] = True
 
-# Impression (la suppression de la date/heure se fait dans les options du navigateur)
 if st.session_state.get("trigger_print"):
     components.html(
         """
@@ -824,7 +818,7 @@ if st.session_state.get("trigger_print"):
     st.session_state["trigger_print"] = False
 
 # ---------------------------------------------------
-# 7. SECTION RESPONSABLE : HISTORIQUE COMPLET + FILTRES
+# 7. HISTORIQUE COMPLET + EXPORT (MODE RESPONSABLE)
 # ---------------------------------------------------
 
 if is_admin():
@@ -838,76 +832,29 @@ if is_admin():
         st.info("Aucun fichier d'historique trouvé pour le moment (aucune pesée encore enregistrée).")
     else:
         try:
+            # Import ici pour éviter de bloquer toute l'app si pandas manque
+            import pandas as pd
+
             df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig")
 
             if df.empty:
                 st.info("Le fichier d'historique existe mais ne contient encore aucun contrôle.")
             else:
-                # Filtres
-                col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+                st.markdown("#### Derniers enregistrements (aperçu)")
+                st.dataframe(df.tail(50), use_container_width=True)
 
-                with col_f1:
-                    op_list = ["(Tous)"] + sorted(df["Opérateur"].dropna().unique().tolist())
-                    op_filter = st.selectbox("Filtrer par opérateur", op_list)
-
-                with col_f2:
-                    prod_list = ["(Tous)"] + sorted(df["Produit"].dropna().unique().tolist())
-                    prod_filter = st.selectbox("Filtrer par produit", prod_list)
-
-                with col_f3:
-                    verdict_list = ["(Tous)"] + sorted(df["Verdict final"].dropna().unique().tolist())
-                    verdict_filter = st.selectbox("Filtrer par verdict", verdict_list)
-
-                with col_f4:
-                    lot_list = ["(Tous)"] + sorted(df["Lot"].dropna().unique().tolist())
-                    lot_filter = st.selectbox("Filtrer par lot", lot_list)
-
-                col_dates = st.columns(2)
-                with col_dates[0]:
-                    date_min = st.date_input(
-                        "Date enregistrement min",
-                        value=None,
-                        format="YYYY-MM-DD",
-                        key="hist_date_min"
-                    )
-                with col_dates[1]:
-                    date_max = st.date_input(
-                        "Date enregistrement max",
-                        value=None,
-                        format="YYYY-MM-DD",
-                        key="hist_date_max"
-                    )
-
-                df_filtered = df.copy()
-
-                if op_filter != "(Tous)":
-                    df_filtered = df_filtered[df_filtered["Opérateur"] == op_filter]
-
-                if prod_filter != "(Tous)":
-                    df_filtered = df_filtered[df_filtered["Produit"] == prod_filter]
-
-                if verdict_filter != "(Tous)":
-                    df_filtered = df_filtered[df_filtered["Verdict final"] == verdict_filter]
-
-                if lot_filter != "(Tous)":
-                    df_filtered = df_filtered[df_filtered["Lot"] == lot_filter]
-
-                # Filtre sur dates d'enregistrement
-                if date_min:
-                    df_filtered = df_filtered[df_filtered["Date enregistrement"] >= date_min.strftime("%Y-%m-%d")]
-                if date_max:
-                    df_filtered = df_filtered[df_filtered["Date enregistrement"] <= date_max.strftime("%Y-%m-%d")]
-
-                st.markdown("#### Résultats filtrés")
-                st.dataframe(df_filtered, use_container_width=True)
-
-                csv_export = df_filtered.to_csv(index=False, sep=";").encode("utf-8-sig")
+                st.markdown("#### Vue complète + export")
+                csv_export = df.to_csv(index=False, sep=";").encode("utf-8-sig")
                 st.download_button(
-                    "📥 Télécharger la vue filtrée (CSV)",
+                    "📥 Télécharger tout l'historique (CSV)",
                     data=csv_export,
-                    file_name="historique_omori1_filtre.csv",
+                    file_name="historique_omori1_complet.csv",
                     mime="text/csv"
                 )
-
+        except ImportError:
+            st.error(
+                "Pandas n'est pas installé sur le serveur, impossible d'afficher l'historique sous forme de tableau.\n"
+                "L'historique est néanmoins bien enregistré dans le fichier CSV sur le serveur."
+            )
         except Exception as e:
             st.error(f"❌ Impossible de lire l'historique : {e}")
