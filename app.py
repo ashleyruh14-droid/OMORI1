@@ -818,43 +818,53 @@ if st.session_state.get("trigger_print"):
     st.session_state["trigger_print"] = False
 
 # ---------------------------------------------------
-# 7. HISTORIQUE COMPLET + EXPORT (MODE RESPONSABLE)
+# 7. HISTORIQUE COMPLET + EXPORT (TOUJOURS VISIBLE)
 # ---------------------------------------------------
 
-if is_admin():
-    st.markdown("---")
-    st.subheader("📁 Historique des contrôles OMORI 1")
+st.markdown("---")
+st.subheader("📁 Historique des contrôles OMORI 1")
 
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(base_dir, "historique_controles_omori.csv")
+base_dir = os.path.dirname(os.path.abspath(__file__))
+csv_path = os.path.join(base_dir, "historique_controles_omori.csv")
 
-    if not os.path.isfile(csv_path):
-        st.info("Aucun fichier d'historique trouvé pour le moment (aucune pesée encore enregistrée).")
-    else:
-        try:
-            # Import ici pour éviter de bloquer toute l'app si pandas manque
-            import pandas as pd
+if not os.path.isfile(csv_path):
+    st.info(
+        "Aucun fichier d'historique trouvé pour le moment.\n\n"
+        "👉 L'historique sera créé automatiquement après le premier enregistrement "
+        "avec le bouton **\"💾 Enregistrer dans l'historique\"**."
+    )
+else:
+    try:
+        # Lire le contenu brut du CSV
+        with open(csv_path, "r", encoding="utf-8-sig") as f:
+            contenu = f.read()
 
-            df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig")
+        if not contenu.strip():
+            st.info("Le fichier d'historique est vide pour l'instant.")
+        else:
+            lignes = contenu.strip().splitlines()
 
-            if df.empty:
-                st.info("Le fichier d'historique existe mais ne contient encore aucun contrôle.")
-            else:
-                st.markdown("#### Derniers enregistrements (aperçu)")
-                st.dataframe(df.tail(50), use_container_width=True)
-
-                st.markdown("#### Vue complète + export")
-                csv_export = df.to_csv(index=False, sep=";").encode("utf-8-sig")
-                st.download_button(
-                    "📥 Télécharger tout l'historique (CSV)",
-                    data=csv_export,
-                    file_name="historique_omori1_complet.csv",
-                    mime="text/csv"
-                )
-        except ImportError:
-            st.error(
-                "Pandas n'est pas installé sur le serveur, impossible d'afficher l'historique sous forme de tableau.\n"
-                "L'historique est néanmoins bien enregistré dans le fichier CSV sur le serveur."
+            # Aperçu des 50 dernières lignes
+            st.markdown("#### Aperçu des 50 dernières lignes")
+            apercu = "\n".join(lignes[-50:])
+            st.text_area(
+                "Aperçu de l'historique (fin du fichier)",
+                value=apercu,
+                height=300,
             )
+
+            # Bouton téléchargement de TOUT l'historique
+            st.markdown("#### Export complet")
+            st.download_button(
+                "📥 Télécharger tout l'historique (CSV complet)",
+                data=contenu.encode("utf-8-sig"),
+                file_name="historique_omori1_complet.csv",
+                mime="text/csv"
+            )
+
+    except Exception as e:
+        st.error(f"❌ Impossible de lire l'historique : {e}")
+
         except Exception as e:
             st.error(f"❌ Impossible de lire l'historique : {e}")
+
