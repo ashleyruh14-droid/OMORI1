@@ -820,47 +820,79 @@ if st.session_state.get("trigger_print"):
     st.session_state["trigger_print"] = False
 
 # ---------------------------------------------------
-# 7. HISTORIQUE GLOBAL – ACCESSIBLE EN PERMANENCE
+# 7. HISTORIQUE GLOBAL – RÉSERVÉ AU MODE RESPONSABLE
 # ---------------------------------------------------
 
 st.markdown("---")
-st.subheader("📁 Historique des contrôles OMORI 1")
 
-# Chemin du fichier CSV côté Streamlit Cloud
-base_dir = os.path.dirname(os.path.abspath(__file__))
-csv_path = os.path.join(base_dir, "historique_controles_omori.csv")
+if is_admin():
+    st.subheader("📁 Historique des contrôles OMORI 1 (mode responsable)")
 
-# Petit debug visuel pour être sûrs
-st.caption(f"Chemin du fichier historique : `{csv_path}`")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(base_dir, "historique_controles_omori.csv")
 
-if not os.path.isfile(csv_path):
-    st.info(
-        "Aucun fichier d'historique trouvé pour le moment.\n\n"
-        "➡ L'historique sera créé automatiquement après le **premier enregistrement** "
-        "avec le bouton **\"💾 Enregistrer dans l'historique\"**."
-    )
+    st.caption(f"Fichier historique utilisé : `{csv_path}`")
+
+    if not os.path.isfile(csv_path):
+        st.info(
+            "Aucun fichier d'historique trouvé pour le moment.\n\n"
+            "➡ L'historique sera créé automatiquement après le **premier enregistrement** "
+            "avec le bouton **\"💾 Enregistrer dans l'historique\"**."
+        )
+    else:
+        try:
+            df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig")
+
+            if df.empty:
+                st.info("Le fichier d'historique existe mais ne contient encore aucun enregistrement.")
+            else:
+                # Tri du plus récent au plus ancien
+                if "Date enregistrement" in df.columns and "Heure enregistrement" in df.columns:
+                    df["Date-heure"] = pd.to_datetime(
+                        df["Date enregistrement"] + " " + df["Heure enregistrement"],
+                        errors="coerce",
+                    )
+                    df = df.sort_values("Date-heure", ascending=False)
+
+                st.success(f"✅ {len(df)} contrôles enregistrés dans l'historique.")
+
+                # Petits filtres simples
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    produits = ["(Tous)"] + sorted(df["Produit"].dropna().unique().tolist())
+                    filtre_produit = st.selectbox("Filtrer par produit", produits)
+                with col_f2:
+                    operateurs = ["(Tous)"] + sorted(df["Opérateur"].dropna().unique().tolist())
+                    filtre_operateur = st.selectbox("Filtrer par opérateur", operateurs)
+
+                df_filtre = df.copy()
+                if filtre_produit != "(Tous)":
+                    df_filtre = df_filtre[df_filtre["Produit"] == filtre_produit]
+                if filtre_operateur != "(Tous)":
+                    df_filtre = df_filtre[df_filtre["Opérateur"] == filtre_operateur]
+
+                st.markdown("#### Tableau complet des contrôles")
+                st.dataframe(
+                    df_filtre.drop(columns=["Date-heure"], errors="ignore"),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                # Export complet (sans filtre) pour audit
+                csv_export = df.to_csv(index=False, sep=";").encode("utf-8-sig")
+                st.markdown("#### Export complet")
+                st.download_button(
+                    "📥 Télécharger tout l'historique (CSV complet)",
+                    data=csv_export,
+                    file_name="historique_omori1_complet.csv",
+                    mime="text/csv",
+                )
+
+        except Exception as e:
+            st.error(f"❌ Erreur lors de la lecture de l'historique : {e}")
+
 else:
-    try:
-        # Lecture du CSV complet
-        df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig")
+    # Pour les opérateurs : juste une petite note discrète
+    st.caption("Historique détaillé disponible uniquement en **mode responsable**.")
 
-        if df.empty:
-            st.info("Le fichier d'historique existe mais ne contient encore aucun enregistrement.")
-        else:
-            st.success(f"✅ {len(df)} enregistrements trouvés dans l'historique.")
-
-            st.markdown("#### Aperçu (50 dernières lignes)")
-            st.dataframe(df.tail(50), use_container_width=True)
-
-            # Export complet
-            csv_export = df.to_csv(index=False, sep=";").encode("utf-8-sig")
-            st.download_button(
-                "📥 Télécharger tout l'historique (CSV complet)",
-                data=csv_export,
-                file_name="historique_omori1_complet.csv",
-                mime="text/csv",
-            )
-
-    except Exception as e:
-        st.error(f"❌ Erreur lors de la lecture de l'historique : {e}")
 
