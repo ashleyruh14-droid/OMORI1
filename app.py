@@ -839,7 +839,10 @@ if is_admin():
         )
     else:
         try:
-            # Lecture CSV avec lots en texte
+            # Lecture CSV :
+            #  - séparateur ; 
+            #  - Lot et E forcés en texte
+            #  - lignes corrompues ignorées (on_bad_lines='skip')
             df = pd.read_csv(
                 csv_path,
                 sep=";",
@@ -847,21 +850,29 @@ if is_admin():
                 dtype={
                     "Lot": str,
                     "Date embossage (E)": str,
-                }
+                },
+                engine="python",
+                on_bad_lines="skip",
             )
 
             if df.empty:
                 st.info("Le fichier d'historique existe mais ne contient encore aucun enregistrement.")
             else:
+                # Nettoyage de la colonne Lot (on enlève l'apostrophe de protection pour Excel)
+                if "Lot" in df.columns:
+                    df["Lot"] = df["Lot"].astype(str).str.lstrip("'")
 
-                # Création colonne datetime complète
-                df["Date-heure"] = pd.to_datetime(
-                    df["Date enregistrement"] + " " + df["Heure enregistrement"],
-                    errors="coerce",
-                )
+                # Création colonne datetime si possible
+                if "Date enregistrement" in df.columns and "Heure enregistrement" in df.columns:
+                    df["Date-heure"] = pd.to_datetime(
+                        df["Date enregistrement"].astype(str) + " " + df["Heure enregistrement"].astype(str),
+                        errors="coerce",
+                    )
+                else:
+                    df["Date-heure"] = pd.NaT
 
                 # Tri du plus récent au plus ancien
-                df = df.sort_values("Date-heure", ascending=False)
+                df = df.sort_values("Date-heure", ascending=False, na_position="last")
 
                 st.success(f"✅ {len(df)} contrôles enregistrés dans l'historique.")
 
@@ -872,23 +883,30 @@ if is_admin():
 
                 col_f1, col_f2, col_f3 = st.columns(3)
 
-                # Produit
+                # Filtre PRODUIT
                 with col_f1:
-                    produits = ["(Tous)"] + sorted(df["Produit"].dropna().unique().tolist())
+                    if "Produit" in df.columns:
+                        produits = ["(Tous)"] + sorted(df["Produit"].dropna().unique().tolist())
+                    else:
+                        produits = ["(Tous)"]
                     filtre_produit = st.selectbox("Produit", produits)
 
-                # Opérateur
+                # Filtre OPÉRATEUR
                 with col_f2:
-                    operateurs = ["(Tous)"] + sorted(df["Opérateur"].dropna().unique().tolist())
+                    if "Opérateur" in df.columns:
+                        operateurs = ["(Tous)"] + sorted(df["Opérateur"].dropna().unique().tolist())
+                    else:
+                        operateurs = ["(Tous)"]
                     filtre_operateur = st.selectbox("Opérateur", operateurs)
 
-                # Dates
+                # Filtre DATE (plage)
                 with col_f3:
                     dates_valides = df["Date-heure"].dropna()
                     if not dates_valides.empty:
                         min_date = dates_valides.min().date()
                         max_date = dates_valides.max().date()
                     else:
+                        # Si aucune date valide, on prend aujourd'hui
                         min_date = max_date = dt.date.today()
 
                     date_start, date_end = st.date_input(
@@ -898,20 +916,23 @@ if is_admin():
                         max_value=max_date,
                     )
 
-                # Application filtres
+                # -------------------------
+                # Application des filtres
+                # -------------------------
                 df_filtre = df.copy()
 
-                if filtre_produit != "(Tous)":
+                if filtre_produit != "(Tous)" and "Produit" in df_filtre.columns:
                     df_filtre = df_filtre[df_filtre["Produit"] == filtre_produit]
 
-                if filtre_operateur != "(Tous)":
+                if filtre_operateur != "(Tous)" and "Opérateur" in df_filtre.columns:
                     df_filtre = df_filtre[df_filtre["Opérateur"] == filtre_operateur]
 
-                df_filtre = df_filtre[
-                    df_filtre["Date-heure"].notna()
-                    & (df_filtre["Date-heure"].dt.date >= date_start)
+                # Filtre par date uniquement là où Date-heure est valide
+                masque_date = df_filtre["Date-heure"].notna() & (
+                    (df_filtre["Date-heure"].dt.date >= date_start)
                     & (df_filtre["Date-heure"].dt.date <= date_end)
-                ]
+                )
+                df_filtre = df_filtre[masque_date]
 
                 # -------------------------
                 # Tableau final
@@ -925,7 +946,7 @@ if is_admin():
                 )
 
                 # -------------------------
-                # Export complet
+                # Export complet (non filtré)
                 # -------------------------
                 st.markdown("### 📥 Export complet (toutes les données)")
 
@@ -944,6 +965,7 @@ if is_admin():
             st.error(f"❌ Erreur lors de la lecture de l'historique : {e}")
 
 else:
-    st.caption("Historique disponible uniquement en **mode responsable**.")
+    st.caption("Historique détaillé disponible uniquement en **mode responsable**.")
+
 
 
