@@ -14,7 +14,6 @@ st.set_page_config(
     page_icon="🧪",
     layout="wide"
 )
-st.warning("🟣 VERSION DEBUG – si tu vois ce message, c'est bien le bon app.py.")
 
 
 POSTE_FIXE = "OMORI 1"
@@ -836,8 +835,7 @@ if is_admin():
     if not os.path.isfile(csv_path):
         st.info(
             "Aucun fichier d'historique trouvé pour le moment.\n\n"
-            "➡ L'historique sera créé automatiquement après le **premier enregistrement** "
-            "avec le bouton **\"💾 Enregistrer dans l'historique\"**."
+            "➡ L'historique sera créé automatiquement après le premier enregistrement."
         )
     else:
         try:
@@ -846,41 +844,79 @@ if is_admin():
             if df.empty:
                 st.info("Le fichier d'historique existe mais ne contient encore aucun enregistrement.")
             else:
-                # Tri du plus récent au plus ancien
-                if "Date enregistrement" in df.columns and "Heure enregistrement" in df.columns:
-                    df["Date-heure"] = pd.to_datetime(
-                        df["Date enregistrement"] + " " + df["Heure enregistrement"],
-                        errors="coerce",
-                    )
-                    df = df.sort_values("Date-heure", ascending=False)
+                # Fabriquer une colonne datetime exploitable
+                df["Date-heure"] = pd.to_datetime(
+                    df["Date enregistrement"] + " " + df["Heure enregistrement"],
+                    errors="coerce",
+                    dayfirst=False,
+                )
+
+                # Trier du plus récent au plus ancien
+                df = df.sort_values("Date-heure", ascending=False)
 
                 st.success(f"✅ {len(df)} contrôles enregistrés dans l'historique.")
 
-                # Petits filtres simples
-                col_f1, col_f2 = st.columns(2)
+                # -------------------------
+                # 🔍 Filtres
+                # -------------------------
+                st.markdown("### 🔍 Filtres")
+
+                col_f1, col_f2, col_f3 = st.columns(3)
+
+                # Filtre PRODUIT
                 with col_f1:
                     produits = ["(Tous)"] + sorted(df["Produit"].dropna().unique().tolist())
                     filtre_produit = st.selectbox("Filtrer par produit", produits)
+
+                # Filtre OPÉRATEUR
                 with col_f2:
                     operateurs = ["(Tous)"] + sorted(df["Opérateur"].dropna().unique().tolist())
                     filtre_operateur = st.selectbox("Filtrer par opérateur", operateurs)
 
+                # Filtre DATE (plage)
+                with col_f3:
+                    min_date = df["Date-heure"].min().date()
+                    max_date = df["Date-heure"].max().date()
+                    date_start, date_end = st.date_input(
+                        "Filtrer par date",
+                        value=(min_date, max_date),
+                        min_value=min_date,
+                        max_value=max_date,
+                    )
+
+                # Application des filtres
                 df_filtre = df.copy()
+
                 if filtre_produit != "(Tous)":
                     df_filtre = df_filtre[df_filtre["Produit"] == filtre_produit]
+
                 if filtre_operateur != "(Tous)":
                     df_filtre = df_filtre[df_filtre["Opérateur"] == filtre_operateur]
 
-                st.markdown("#### Tableau complet des contrôles")
+                # Filtre date : conserver les enregistrements dans la plage sélectionnée
+                df_filtre = df_filtre[
+                    (df_filtre["Date-heure"].dt.date >= date_start)
+                    & (df_filtre["Date-heure"].dt.date <= date_end)
+                ]
+
+                # -------------------------
+                # TABLEAU AFFICHAGE
+                # -------------------------
+                st.markdown("### 📊 Tableau des contrôles filtrés")
+
                 st.dataframe(
                     df_filtre.drop(columns=["Date-heure"], errors="ignore"),
                     use_container_width=True,
                     hide_index=True,
                 )
 
-                # Export complet (sans filtre) pour audit
+                # -------------------------
+                # EXPORT COMPLET (pas filtré)
+                # -------------------------
+                st.markdown("### 📥 Export complet (pour audit)")
+
                 csv_export = df.to_csv(index=False, sep=";").encode("utf-8-sig")
-                st.markdown("#### Export complet")
+
                 st.download_button(
                     "📥 Télécharger tout l'historique (CSV complet)",
                     data=csv_export,
@@ -892,6 +928,4 @@ if is_admin():
             st.error(f"❌ Erreur lors de la lecture de l'historique : {e}")
 
 else:
-    # Pour les opérateurs : juste une petite note discrète
-    st.caption("Historique détaillé disponible uniquement en **mode responsable**.")
-
+    st.caption("Historique disponible uniquement en **mode responsable**.")
