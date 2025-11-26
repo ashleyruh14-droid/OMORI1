@@ -863,4 +863,3 @@ else:
 
     except Exception as e:
         st.error(f"❌ Impossible de lire l'historique : {e}")
-
