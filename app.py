@@ -835,11 +835,11 @@ if is_admin():
     if not os.path.isfile(csv_path):
         st.info(
             "Aucun fichier d'historique trouvé pour le moment.\n\n"
-            "➡ L'historique sera créé automatiquement après le premier enregistrement."
+            "➡ L'historique sera généré après votre premier enregistrement."
         )
     else:
         try:
-            # Lecture du CSV en forçant Lot (et E) en texte pour éviter la notation scientifique
+            # Lecture CSV avec lots en texte
             df = pd.read_csv(
                 csv_path,
                 sep=";",
@@ -853,7 +853,8 @@ if is_admin():
             if df.empty:
                 st.info("Le fichier d'historique existe mais ne contient encore aucun enregistrement.")
             else:
-                # Colonne datetime exploitable pour tri + filtre date
+
+                # Création colonne datetime complète
                 df["Date-heure"] = pd.to_datetime(
                     df["Date enregistrement"] + " " + df["Heure enregistrement"],
                     errors="coerce",
@@ -871,39 +872,33 @@ if is_admin():
 
                 col_f1, col_f2, col_f3 = st.columns(3)
 
-                # Filtre PRODUIT
+                # Produit
                 with col_f1:
                     produits = ["(Tous)"] + sorted(df["Produit"].dropna().unique().tolist())
-                    filtre_produit = st.selectbox("Filtrer par produit", produits)
+                    filtre_produit = st.selectbox("Produit", produits)
 
-                # Filtre OPÉRATEUR
+                # Opérateur
                 with col_f2:
                     operateurs = ["(Tous)"] + sorted(df["Opérateur"].dropna().unique().tolist())
-                    filtre_operateur = st.selectbox("Filtrer par opérateur", operateurs)
+                    filtre_operateur = st.selectbox("Opérateur", operateurs)
 
-                # Filtre DATE (plage)
+                # Dates
                 with col_f3:
-                    # Gestion des dates possibles (on ignore les NaT)
                     dates_valides = df["Date-heure"].dropna()
                     if not dates_valides.empty:
                         min_date = dates_valides.min().date()
                         max_date = dates_valides.max().date()
                     else:
-                        # Valeurs par défaut si jamais tout est NaT (très improbable)
-                        today = dt.date.today()
-                        min_date = today
-                        max_date = today
+                        min_date = max_date = dt.date.today()
 
                     date_start, date_end = st.date_input(
-                        "Filtrer par date",
+                        "Période",
                         value=(min_date, max_date),
                         min_value=min_date,
                         max_value=max_date,
                     )
 
-                # -------------------------
-                # Application des filtres
-                # -------------------------
+                # Application filtres
                 df_filtre = df.copy()
 
                 if filtre_produit != "(Tous)":
@@ -912,7 +907,6 @@ if is_admin():
                 if filtre_operateur != "(Tous)":
                     df_filtre = df_filtre[df_filtre["Opérateur"] == filtre_operateur]
 
-                # Filtre date (on ne filtre que les lignes où Date-heure est valide)
                 df_filtre = df_filtre[
                     df_filtre["Date-heure"].notna()
                     & (df_filtre["Date-heure"].dt.date >= date_start)
@@ -920,7 +914,7 @@ if is_admin():
                 ]
 
                 # -------------------------
-                # TABLEAU AFFICHAGE
+                # Tableau final
                 # -------------------------
                 st.markdown("### 📊 Tableau des contrôles filtrés")
 
@@ -931,16 +925,16 @@ if is_admin():
                 )
 
                 # -------------------------
-                # EXPORT COMPLET (non filtré)
+                # Export complet
                 # -------------------------
-                st.markdown("### 📥 Export complet (pour audit)")
+                st.markdown("### 📥 Export complet (toutes les données)")
 
                 csv_export = df.drop(columns=["Date-heure"], errors="ignore") \
                                .to_csv(index=False, sep=";") \
                                .encode("utf-8-sig")
 
                 st.download_button(
-                    "📥 Télécharger tout l'historique (CSV complet)",
+                    "📥 Télécharger l'historique complet (CSV)",
                     data=csv_export,
                     file_name="historique_omori1_complet.csv",
                     mime="text/csv",
@@ -950,7 +944,6 @@ if is_admin():
             st.error(f"❌ Erreur lors de la lecture de l'historique : {e}")
 
 else:
-    st.caption("Historique détaillé disponible uniquement en **mode responsable**.")
-
-else:
     st.caption("Historique disponible uniquement en **mode responsable**.")
+
+
