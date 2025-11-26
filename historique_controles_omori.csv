@@ -1,5 +1,0 @@
-﻿Date enregistrement;Heure enregistrement;Opérateur;Poste;Produit;Lot;Date embossage (E);Date fabrication;Date conditionnement;Poids produit (g);Quantité produite réelle (uc);Poids min toléré (g);Nombre de pesées par contrôle;Moyenne 1er contrôle (g);Nb NC 1er contrôle;Moyenne globale (1er + 2e) (g);Nb NC 2e contrôle;Détail pesées 1er contrôle;Détail pesées 2e contrôle;Verdict final
-25/11/2025;11:45:44;testash;OMORI 1;Netto fort;2,53E+24;20/11/2025;20/11/2025;25/11/2025;50.0;3;45.5;3;50.00;0;50.00;;50.00|50.00|50.00;;Lot conforme au 1er contrôle
-25/11/2025;11:52:14;testop;OMORI 1;Self;2,53E+29;25/11/2025;25/11/2025;25/11/2025;50.0;3;45.5;3;50.00;0;50.00;;50.00|50.00|50.00;;Lot conforme au 1er contrôle
-25/11/2025;11:54:46;testash;OMORI 1;Boeuf Volaille;2,53E+29;25/11/2025;25/11/2025;25/11/2025;50.0;3;45.5;3;50.00;0;50.00;;50.00|50.00|50.00;;Lot conforme au 1er contrôle
-25/11/2025;12:00:20;test;OMORI 1;Supérieur fort;2,53E+29;25/11/2025;25/11/2025;25/11/2025;50.0;2;45.5;2;50.00;0;50.00;;50.00|50.00;;Lot conforme au 1er contrôle
