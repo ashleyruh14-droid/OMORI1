@@ -13,6 +13,8 @@ st.set_page_config(
     page_icon="🧪",
     layout="wide"
 )
+st.warning("🟣 VERSION DEBUG – si tu vois ce message, c'est bien le bon app.py.")
+
 
 POSTE_FIXE = "OMORI 1"
 ADMIN_PASSWORD = "Julia1954B"  # Mot de passe responsable
@@ -861,3 +863,4 @@ else:
 
     except Exception as e:
         st.error(f"❌ Impossible de lire l'historique : {e}")
+
