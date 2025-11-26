@@ -895,4 +895,3 @@ else:
     # Pour les opérateurs : juste une petite note discrète
     st.caption("Historique détaillé disponible uniquement en **mode responsable**.")
 
-
