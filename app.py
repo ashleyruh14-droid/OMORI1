@@ -4,6 +4,7 @@ import os
 import csv
 import math
 import streamlit.components.v1 as components
+import pandas as pd
 
 # ---------------------------------------------------
 # CONFIG DE LA PAGE
@@ -819,47 +820,47 @@ if st.session_state.get("trigger_print"):
     st.session_state["trigger_print"] = False
 
 # ---------------------------------------------------
-# 7. HISTORIQUE COMPLET + EXPORT (TOUJOURS VISIBLE)
+# 7. HISTORIQUE GLOBAL – ACCESSIBLE EN PERMANENCE
 # ---------------------------------------------------
 
 st.markdown("---")
 st.subheader("📁 Historique des contrôles OMORI 1")
-st.write("🚨 DEBUG HISTORIQUE : ce bloc est exécuté ✅")
 
+# Chemin du fichier CSV côté Streamlit Cloud
 base_dir = os.path.dirname(os.path.abspath(__file__))
 csv_path = os.path.join(base_dir, "historique_controles_omori.csv")
+
+# Petit debug visuel pour être sûrs
+st.caption(f"Chemin du fichier historique : `{csv_path}`")
 
 if not os.path.isfile(csv_path):
     st.info(
         "Aucun fichier d'historique trouvé pour le moment.\n\n"
-        "👉 L'historique sera créé automatiquement après le premier enregistrement "
+        "➡ L'historique sera créé automatiquement après le **premier enregistrement** "
         "avec le bouton **\"💾 Enregistrer dans l'historique\"**."
     )
 else:
     try:
-        with open(csv_path, "r", encoding="utf-8-sig") as f:
-            contenu = f.read()
+        # Lecture du CSV complet
+        df = pd.read_csv(csv_path, sep=";", encoding="utf-8-sig")
 
-        if not contenu.strip():
-            st.info("Le fichier d'historique est vide pour l'instant.")
+        if df.empty:
+            st.info("Le fichier d'historique existe mais ne contient encore aucun enregistrement.")
         else:
-            lignes = contenu.strip().splitlines()
+            st.success(f"✅ {len(df)} enregistrements trouvés dans l'historique.")
 
-            st.markdown("#### Aperçu des 50 dernières lignes")
-            apercu = "\n".join(lignes[-50:])
-            st.text_area(
-                "Aperçu de l'historique (fin du fichier)",
-                value=apercu,
-                height=300,
-            )
+            st.markdown("#### Aperçu (50 dernières lignes)")
+            st.dataframe(df.tail(50), use_container_width=True)
 
-            st.markdown("#### Export complet")
+            # Export complet
+            csv_export = df.to_csv(index=False, sep=";").encode("utf-8-sig")
             st.download_button(
                 "📥 Télécharger tout l'historique (CSV complet)",
-                data=contenu.encode("utf-8-sig"),
+                data=csv_export,
                 file_name="historique_omori1_complet.csv",
-                mime="text/csv"
+                mime="text/csv",
             )
 
     except Exception as e:
-        st.error(f"❌ Impossible de lire l'historique : {e}")
+        st.error(f"❌ Erreur lors de la lecture de l'historique : {e}")
+
