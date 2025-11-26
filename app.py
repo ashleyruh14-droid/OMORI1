@@ -15,7 +15,6 @@ st.set_page_config(
     layout="wide"
 )
 
-
 POSTE_FIXE = "OMORI 1"
 ADMIN_PASSWORD = "Julia1954B"  # Mot de passe responsable
 
@@ -807,6 +806,7 @@ if st.session_state.get("verdict_final"):
             st.success("✅ Contrôle enregistré dans l'historique.")
             st.session_state["trigger_print"] = True
 
+# Impression
 if st.session_state.get("trigger_print"):
     components.html(
         """
@@ -839,17 +839,13 @@ if is_admin():
         )
     else:
         try:
-            # Lecture CSV tolérante :
-            #  - séparateur ;
-            #  - Lot et E en texte
-            #  - lignes corrompues ignorées
             df = pd.read_csv(
                 csv_path,
                 sep=";",
                 encoding="utf-8-sig",
                 dtype={
                     "Lot": str,
-                    "Date embossage (E)": str,
+                    "Code E": str,
                 },
                 engine="python",
                 on_bad_lines="skip",
@@ -858,10 +854,6 @@ if is_admin():
             if df.empty:
                 st.info("Le fichier d'historique existe mais ne contient encore aucun enregistrement.")
             else:
-                # Nettoyage de Lot (on enlève l'éventuelle apostrophe de protection)
-                if "Lot" in df.columns:
-                    df["Lot"] = df["Lot"].astype(str).str.lstrip("'")
-
                 # Création d'une colonne Date-heure si possible, pour trier
                 if "Date enregistrement" in df.columns and "Heure enregistrement" in df.columns:
                     df["Date-heure"] = pd.to_datetime(
@@ -875,11 +867,11 @@ if is_admin():
                 st.success(f"✅ {len(df)} contrôles enregistrés dans l'historique.")
 
                 # -------------------------
-                # 🔍 Filtres PRODUIT / OPÉRATEUR
+                # 🔍 Filtres PRODUIT / OPÉRATEUR / DATE
                 # -------------------------
                 st.markdown("### 🔍 Filtres")
 
-                col_f1, col_f2 = st.columns(2)
+                col_f1, col_f2, col_f3 = st.columns(3)
 
                 # Filtre PRODUIT
                 with col_f1:
@@ -897,6 +889,22 @@ if is_admin():
                         operateurs = ["(Tous)"]
                     filtre_operateur = st.selectbox("Opérateur", operateurs)
 
+                # Filtre DATE
+                with col_f3:
+                    dates_valides = df["Date-heure"].dropna()
+                    if not dates_valides.empty:
+                        min_date = dates_valides.min().date()
+                        max_date = dates_valides.max().date()
+                    else:
+                        min_date = max_date = dt.date.today()
+
+                    date_start, date_end = st.date_input(
+                        "Période",
+                        value=(min_date, max_date),
+                        min_value=min_date,
+                        max_value=max_date,
+                    )
+
                 # Application des filtres
                 df_filtre = df.copy()
 
@@ -906,8 +914,15 @@ if is_admin():
                 if filtre_operateur != "(Tous)" and "Opérateur" in df_filtre.columns:
                     df_filtre = df_filtre[df_filtre["Opérateur"] == filtre_operateur]
 
+                # Filtre de date
+                masque_date = df_filtre["Date-heure"].notna() & (
+                    (df_filtre["Date-heure"].dt.date >= date_start)
+                    & (df_filtre["Date-heure"].dt.date <= date_end)
+                )
+                df_filtre = df_filtre[masque_date]
+
                 # -------------------------
-                # Tableau final (tous les enregistrements filtrés)
+                # Tableau final
                 # -------------------------
                 st.markdown("### 📊 Tableau des contrôles filtrés")
 
@@ -938,6 +953,3 @@ if is_admin():
 
 else:
     st.caption("Historique détaillé disponible uniquement en **mode responsable**.")
-
-
-
